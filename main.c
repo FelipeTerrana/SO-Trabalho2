@@ -593,7 +593,7 @@ char sanitizeBeforeQuit () {
 
 //Interface para o menu de selecao de operacoes sobre diretorios
 void dirMenuSelection (void) {
-	char choice;
+	char choice = ' ';
 	while ( choice != '<' ) {
 		printf ("\nDIRECTORY operations:                   "
 			  "               Disks: %u / Root Disk: %d\n"
@@ -619,7 +619,7 @@ void dirMenuSelection (void) {
 
 //Interface para o menu de selecao de operacoes sobre arquivos regulares
 void fileMenuSelection (void) {
-	char choice;
+	char choice = ' ';
 	while ( choice != '<' ) {
 		printf ("\nFILE operations:                        "
 			  "               Disks: %u / Root Disk: %d\n"
@@ -643,7 +643,7 @@ void fileMenuSelection (void) {
 //Interface para o menu de selecao de operacoes de gerenciamento de um
 //sistema de arquivos
 void fsMenuSelection (void) {
-	char choice;
+	char choice = ' ';
 	while ( choice != '<' ) {
 		printf ("\nFILESYSTEM management:                  "
 			  "               Disks: %u / Root Disk: %d\n"
@@ -670,7 +670,7 @@ void fsMenuSelection (void) {
 
 //Interface para o o menu de selecao de operacoes de gerenciamento de um disco
 void diskMenuSelection (void) {
-	char choice;
+	char choice = ' ';
 	while ( choice != '<' ) {
 		printf ("\nDISK operations:                        "
 			  "               Disks: %u / Root Disk: %d\n"
@@ -715,7 +715,7 @@ void mainMenuSelection (void) {
 			case 'I': case 'i': fileMenuSelection(); break;
 			case 'R': case 'r': dirMenuSelection(); break;
 			case 'Q': case 'q': choice = sanitizeBeforeQuit();
-					    break; 
+					    break;
 		}
 	}
 }
