@@ -13,14 +13,17 @@
 */
 
 #include "myfs.h"
+
+#include <stdbool.h>
+#include "disk.h"
 #include "vfs.h"
 
 int myfsSlot = -1;
 
 FSInfo myfsInfo =
 {
-    'm',
-    "myfs",
+    0,      // fsid
+    "myfs", // fsname
     myfsIsIdle,
     myfsFormat,
     myfsOpen,
@@ -34,6 +37,8 @@ FSInfo myfsInfo =
     myfsClosedir
 };
 
+FileInfo* openFiles[MAX_FDS] = {NULL};
+
 
 
 int installMyFS()
@@ -46,8 +51,16 @@ int installMyFS()
 
 int myfsIsIdle(Disk *d)
 {
-    // TODO myfsIsIdle
-    return 0;
+    int diskId = diskGetId(d);
+    int i;
+
+    for(i=0; i < MAX_FDS; i++)
+    {
+        FileInfo* fi = openFiles[i];
+        if(fi != NULL && fi->diskId == diskId) return false;
+    }
+
+    return true;
 }
 
 

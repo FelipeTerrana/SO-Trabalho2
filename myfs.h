@@ -31,4 +31,11 @@ int myfsLink(int fd, const char *filename, unsigned int inumber);
 int myfsUnlink(int fd, const char *filename);
 int myfsClosedir(int fd);
 
+typedef struct
+{
+    int diskId;
+    int inodeId;
+    int currentByte;
+} FileInfo;
+
 #endif //SO_TRABALHO2_MYFS_H
