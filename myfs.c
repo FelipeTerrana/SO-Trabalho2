@@ -133,13 +133,16 @@ int myfsRead(int fd, char *buf, unsigned int nbytes)
     FileInfo* file = openFiles[fd];
     if(file == NULL) return -1;
 
+    unsigned int fileSize = inodeGetFileSize(file->inode);
     unsigned int bytesRead = 0;
     unsigned int currentInodeBlockNum = file->currentByte / file->diskBlockSize;
     unsigned int offset = file->currentByte % file->diskBlockSize; // offset em bytes a partir do início do bloco
     unsigned int currentBlock = inodeGetBlockAddr(file->inode, currentInodeBlockNum);
     unsigned char diskBuffer[DISK_SECTORDATASIZE];
 
-    while(bytesRead < nbytes && currentBlock > 0)
+    while(bytesRead < nbytes &&
+          bytesRead + file->currentByte < fileSize &&
+          currentBlock > 0)
     {
         unsigned int sectorsPerBlock = file->diskBlockSize / DISK_SECTORDATASIZE;
         unsigned int firstSector = offset / DISK_SECTORDATASIZE;
@@ -151,7 +154,9 @@ int myfsRead(int fd, char *buf, unsigned int nbytes)
             if(diskReadSector(file->disk, currentBlock + i, diskBuffer) == -1) return -1;
 
             int j;
-            for(j = firstByteInSector; j < DISK_SECTORDATASIZE && bytesRead < nbytes; j++)
+            for(j = firstByteInSector;  j < DISK_SECTORDATASIZE &&
+                                        bytesRead < nbytes &&
+                                        bytesRead + file->currentByte < fileSize;  j++)
             {
                 buf[bytesRead] = diskBuffer[j];
                 bytesRead++;

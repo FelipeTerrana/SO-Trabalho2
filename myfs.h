@@ -37,7 +37,7 @@ typedef struct
     Disk* disk;
     unsigned int diskBlockSize;
     Inode* inode;
-    unsigned long long currentByte;
+    unsigned int currentByte;
 } FileInfo;
 
 #endif //SO_TRABALHO2_MYFS_H
