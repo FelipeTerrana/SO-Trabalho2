@@ -189,7 +189,15 @@ int myfsWrite(int fd, const char *buf, unsigned int nbytes)
 
 int myfsClose(int fd)
 {
-    // TODO myfsClose
+    FileInfo* file = openFiles[fd];
+
+    if(file == NULL) return -1;
+
+    // Libera apenas o ponteiro para o Inode pois o ponteiro para Disk ja existia antes da alocacao do FileInfo
+    free(file->inode);
+
+    free(file);
+    openFiles[fd] = NULL;
     return 0;
 }
 
