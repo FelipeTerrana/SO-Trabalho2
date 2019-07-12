@@ -105,10 +105,13 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     ul2char(firstBlockSector, &superblock[SUPERBLOCK_FIRST_BLOCK_SECTOR]);
     ul2char(numBlocks, &superblock[SUPERBLOCK_NUM_BLOCKS]);
 
-    diskWriteSector(d, 0, superblock);
+    if(diskWriteSector(d, 0, superblock) == -1 ) return -1;
 
     unsigned char freeSpace[DISK_SECTORDATASIZE] = {0};
-    for(i=0; i < freeSpaceSize; i++) diskWriteSector(d, freeSpaceSector + i, freeSpace);
+    for(i=0; i < freeSpaceSize; i++)
+    {
+        if(diskWriteSector(d, freeSpaceSector + i, freeSpace) == -1) return -1;
+    }
 
     return numBlocks > 0 ? numBlocks : -1;
 }
