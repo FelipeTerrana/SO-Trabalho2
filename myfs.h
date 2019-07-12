@@ -34,7 +34,8 @@ int myfsClosedir(int fd);
 
 typedef struct
 {
-    int diskId;
+    Disk* disk;
+    unsigned int diskBlockSize;
     Inode* inode;
     unsigned long long currentByte;
 } FileInfo;

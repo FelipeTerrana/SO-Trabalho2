@@ -61,13 +61,12 @@ int installMyFS()
 
 int myfsIsIdle(Disk *d)
 {
-    int diskId = diskGetId(d);
     int i;
 
     for(i=0; i < MAX_FDS; i++)
     {
-        FileInfo* fi = openFiles[i];
-        if(fi != NULL && fi->diskId == diskId) return false;
+        FileInfo* file = openFiles[i];
+        if(file != NULL && diskGetId(d) == diskGetId(file->disk)) return false;
     }
 
     return true;
@@ -128,8 +127,44 @@ int myfsOpen(Disk *d, const char *path)
 
 int myfsRead(int fd, char *buf, unsigned int nbytes)
 {
-    // TODO myfsRead
-    return 0;
+    FileInfo* file = openFiles[fd];
+    if(file == NULL) return -1;
+
+    unsigned int bytesRead = 0;
+    unsigned int currentInodeBlockNum = file->currentByte / file->diskBlockSize;
+    unsigned int offset = file->currentByte % file->diskBlockSize; // offset em bytes a partir do início do bloco
+    unsigned int currentBlock = inodeGetBlockAddr(file->inode, currentInodeBlockNum);
+    unsigned char diskBuffer[DISK_SECTORDATASIZE];
+
+    while(bytesRead < nbytes && currentBlock > 0)
+    {
+        unsigned int sectorsPerBlock = file->diskBlockSize / DISK_SECTORDATASIZE;
+        unsigned int firstSector = offset / DISK_SECTORDATASIZE;
+        unsigned int firstByteInSector = offset % DISK_SECTORDATASIZE;
+
+        int i;
+        for(i = firstSector; i < sectorsPerBlock; i++)
+        {
+            if(diskReadSector(file->disk, currentBlock + i, diskBuffer) == -1) return -1;
+
+            int j;
+            for(j = firstByteInSector; j < DISK_SECTORDATASIZE && bytesRead < nbytes; j++)
+            {
+                buf[bytesRead] = diskBuffer[j];
+                bytesRead++;
+            }
+
+            firstByteInSector = 0;
+        }
+
+        offset = 0;
+        currentInodeBlockNum++;
+        currentBlock = inodeGetBlockAddr(file->inode, currentInodeBlockNum);
+    }
+
+    file->currentByte += bytesRead;
+
+    return bytesRead;
 }
 
 
