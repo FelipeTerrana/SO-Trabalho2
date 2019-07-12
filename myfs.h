@@ -16,6 +16,7 @@
 #define SO_TRABALHO2_MYFS_H
 
 #include "disk.h"
+#include "inode.h"
 
 int installMyFS();
 
@@ -34,8 +35,8 @@ int myfsClosedir(int fd);
 typedef struct
 {
     int diskId;
-    int inodeId;
-    int currentByte;
+    Inode* inode;
+    unsigned long long currentByte;
 } FileInfo;
 
 #endif //SO_TRABALHO2_MYFS_H
