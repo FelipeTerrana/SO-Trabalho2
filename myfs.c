@@ -73,12 +73,22 @@ int __firstZeroBit(unsigned char byte)
 }
 
 
-// Retorna o byte de entrada com o bit na posicao informada transformado em 1. Bits sao contados do menos significativos
-// para os mais significativos, contando do 0 ao 7
+// Retorna o byte de entrada com o bit na posicao informada transformado em 1. Bits sao contados do menos significativo
+// para o mais significativo, contando do 0 ao 7
 unsigned char __setBitToOne(unsigned char byte, unsigned int bit)
 {
     unsigned char mask = (unsigned char) 1 << bit;
     return byte | mask;
+}
+
+
+// Retorna o byte de entrada com o bit na posicao informada transformado em 0. Bits sao contados do menos significativo
+// para o mais significativo, contando do 0 ao 7
+unsigned char __setBitToZero(unsigned char byte, unsigned int bit)
+{
+    unsigned char mask = ((unsigned char) 1 << bit);
+    mask = ~mask;
+    return byte & mask;
 }
 
 
@@ -135,6 +145,44 @@ unsigned int __findFreeBlock(Disk *d)
     }
 
     return -1;
+}
+
+
+
+// Dado um bloco em um disco formatado em myfs, marca o bloco como livre para uso. Retorna true (!= 0) se a operacao
+// foi bem sucedida e false (0) se algum erro ocorreu no processo
+bool __setBlockFree(Disk *d, unsigned int block)
+{
+    unsigned char buffer[DISK_SECTORDATASIZE];
+    if(diskReadSector(d, 0, buffer) == -1) return false;
+
+    if(buffer[SUPERBLOCK_FSID] != myfsInfo.fsid) return false;
+
+    unsigned int sectorsPerBlock;
+    char2ul(&buffer[SUPERBLOCK_BLOCKSIZE], &sectorsPerBlock);
+    sectorsPerBlock /= DISK_SECTORDATASIZE;
+
+    unsigned int numBlocks;
+    char2ul(&buffer[SUPERBLOCK_NUM_BLOCKS], &numBlocks);
+
+    unsigned int firstBlock;
+    char2ul(&buffer[SUPERBLOCK_FIRST_BLOCK_SECTOR], &firstBlock);
+
+    unsigned int freeSpaceStartSector;
+    char2ul(&buffer[SUPERBLOCK_FREE_SPACE_SECTOR], &freeSpaceStartSector);
+
+    // Bloco de entrada excede a regiao de blocos disponiveis
+    if((block - firstBlock) / sectorsPerBlock >= numBlocks) return false;
+
+    unsigned int blockFreeSpaceSector = ((block - firstBlock) / sectorsPerBlock) / (DISK_SECTORDATASIZE * 8);
+    if(diskReadSector(d, blockFreeSpaceSector, buffer) == -1) return false;
+
+    unsigned int blockFreeSpaceBit = ((block - firstBlock) / sectorsPerBlock) % (DISK_SECTORDATASIZE * 8);
+    buffer[blockFreeSpaceBit / 8] = __setBitToZero(buffer[blockFreeSpaceBit / 8], blockFreeSpaceBit % 8);
+
+    if(diskWriteSector(d, blockFreeSpaceSector, buffer) == -1) return false;
+
+    return true;
 }
 
 
