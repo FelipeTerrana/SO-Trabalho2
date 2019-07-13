@@ -28,6 +28,10 @@
 #define SUPERBLOCK_FIRST_BLOCK_SECTOR (2 * sizeof(unsigned int) + sizeof(char))
 #define SUPERBLOCK_NUM_BLOCKS (3 * sizeof(unsigned int) + sizeof(char))
 
+// 255 significa que os 8 bits sao iguais a 1. Se for diferente de 255 pelo menos um bit e 0, representando
+// um bloco livre no disco
+#define NON_ZERO_BYTE 255
+
 int myfsSlot = -1;
 
 FSInfo myfsInfo =
@@ -48,6 +52,90 @@ FSInfo myfsInfo =
 };
 
 FileInfo* openFiles[MAX_FDS] = {NULL};
+
+
+
+// Retorna o primeiro bit igual a 0 no byte de entrada, procurando do bit menos significativo para o mais significativo.
+// Os bits são considerados do 0 ao 7 e, caso todos os bits sejam 1, retorna -1
+int __firstZeroBit(unsigned char byte)
+{
+    if(byte == NON_ZERO_BYTE) return -1;
+
+    int i;
+    unsigned char mask = 1;
+    for(i=0; i < sizeof(unsigned char); i++)
+    {
+        if( (mask & byte) == 0 ) return i;
+        mask <<= (unsigned char) 1;
+    }
+
+    return -1;
+}
+
+
+// Retorna o byte de entrada com o bit na posicao informada transformado em 1. Bits sao contados do menos significativos
+// para os mais significativos, contando do 0 ao 7
+unsigned char __setBitToOne(unsigned char byte, unsigned int bit)
+{
+    unsigned char mask = (unsigned char) 1 << bit;
+    return byte | mask;
+}
+
+
+
+// Encontra um bloco livre no disco e o marca como ocupado se este estiver em formato myfs. Retorna -1 se nao houver
+// bloco livre ou se o disco nao estiver formatado corretamente
+unsigned int __findFreeBlock(Disk *d)
+{
+    unsigned char buffer[DISK_SECTORDATASIZE];
+    if(diskReadSector(d, 0, buffer) == -1) return -1; // Superbloco inicialmente carregado no buffer
+
+    if(buffer[SUPERBLOCK_FSID] != myfsInfo.fsid) return -1;
+
+    unsigned int sectorsPerBlock;
+    char2ul(&buffer[SUPERBLOCK_BLOCKSIZE], &sectorsPerBlock);
+    sectorsPerBlock /= DISK_SECTORDATASIZE;
+
+    unsigned int numBlocks;
+    char2ul(&buffer[SUPERBLOCK_NUM_BLOCKS], &numBlocks);
+
+    unsigned int firstBlock;
+    char2ul(&buffer[SUPERBLOCK_FIRST_BLOCK_SECTOR], &firstBlock);
+
+    unsigned int freeSpaceSector;
+    char2ul(&buffer[SUPERBLOCK_FREE_SPACE_SECTOR], &freeSpaceSector);
+
+    unsigned int freeSpaceSize = firstBlock - freeSpaceSector;
+
+    unsigned int i;
+    for(i = freeSpaceSector; i < freeSpaceSector + freeSpaceSize; i++)
+    {
+        if(diskReadSector(d, i, buffer) == -1) return -1;
+
+        unsigned int j;
+        for(j=0; j < DISK_SECTORDATASIZE; j++)
+        {
+            int freeBit = __firstZeroBit(buffer[j]);
+            if(freeBit != -1)
+            {
+                unsigned int freeBlock = firstBlock +
+                             (i - freeSpaceSector) * DISK_SECTORDATASIZE * 8 * sectorsPerBlock +
+                             j * 8 * sectorsPerBlock +
+                             freeBit * sectorsPerBlock;
+
+                // Bloco livre excede a regiao de blocos disponiveis, nenhum bloco livre valido foi encontrado
+                if((freeBlock - firstBlock) / sectorsPerBlock >= numBlocks) return -1;
+
+                buffer[j] = __setBitToOne(buffer[j], freeBit);
+                if(diskWriteSector(d, i, buffer) == -1) return -1;
+
+                return freeBlock;
+            }
+        }
+    }
+
+    return -1;
+}
 
 
 
