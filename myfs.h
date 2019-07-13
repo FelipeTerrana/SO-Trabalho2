@@ -1,7 +1,7 @@
 /*
 *  myfs.h - Header da API do novo sistema de arquivos
 *
-*  Autores: Eduardo Pereira do Valle - TODO colocar matricula
+*  Autores: Eduardo Pereira do Valle - 201665554AC
 *           Felipe Terrana Cazetta - 201635026
 *           Matheus Brinati Altomar - TODO colocar matricula
 *           Vinicius Alberto Alves da Silva - TODO colocar matricula
