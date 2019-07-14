@@ -3,8 +3,8 @@
 *
 *  Autores: Eduardo Pereira do Valle - 201665554AC
 *           Felipe Terrana Cazetta - 201635026
-*           Matheus Brinati Altomar - TODO colocar matricula
-*           Vinicius Alberto Alves da Silva - TODO colocar matricula
+*           Matheus Brinati Altomar - 201665564C
+*           Vinicius Alberto Alves da Silva - 201665558AC
 *
 *  Projeto: Trabalho Pratico II - Sistemas Operacionais
 *  Organizacao: Universidade Federal de Juiz de Fora
