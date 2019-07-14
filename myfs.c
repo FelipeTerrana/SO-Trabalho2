@@ -16,6 +16,7 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include "disk.h"
 #include "inode.h"
 #include "util.h"
@@ -266,6 +267,7 @@ int myfsOpen(Disk *d, const char *path)
 
 int myfsRead(int fd, char *buf, unsigned int nbytes)
 {
+    if(fd < 0 || fd >= MAX_FDS) return -1;
     FileInfo* file = openFiles[fd];
     if(file == NULL) return -1;
 
@@ -316,6 +318,7 @@ int myfsRead(int fd, char *buf, unsigned int nbytes)
 
 int myfsWrite(int fd, const char *buf, unsigned int nbytes)
 {
+    if(fd < 0 || fd >= MAX_FDS) return -1;
     FileInfo* file = openFiles[fd];
     if(file == NULL) return -1;
 
@@ -377,6 +380,7 @@ int myfsWrite(int fd, const char *buf, unsigned int nbytes)
 
 int myfsClose(int fd)
 {
+    if(fd < 0 || fd >= MAX_FDS) return -1;
     FileInfo* file = openFiles[fd];
 
     if(file == NULL) return -1;
@@ -403,8 +407,20 @@ int myfsOpendir(Disk *d, const char *path)
 
 int myfsReaddir(int fd, char *filename, unsigned int *inumber)
 {
-    // TODO myfsReaddir
-    return 0;
+    if(fd < 0 || fd >= MAX_FDS) return -1;
+    FileInfo* file = openFiles[fd];
+
+    if(file == NULL || inodeGetFileType(file->inode) != FILETYPE_DIR) return -1;
+
+    DirectoryEntry entry;
+    int bytesRead = myfsRead(fd, (char*) &entry, sizeof(DirectoryEntry));
+
+    if(bytesRead == -1) return -1; // Erro na leitura
+    if(bytesRead < sizeof(DirectoryEntry)) return 0; // Fim do diretorio
+
+    strcpy(filename, entry.filename);
+    *inumber = entry.inumber;
+    return 1;
 }
 
 

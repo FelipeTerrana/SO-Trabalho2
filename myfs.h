@@ -17,6 +17,7 @@
 
 #include "disk.h"
 #include "inode.h"
+#include "vfs.h"
 
 int installMyFS();
 
@@ -32,6 +33,7 @@ int myfsLink(int fd, const char *filename, unsigned int inumber);
 int myfsUnlink(int fd, const char *filename);
 int myfsClosedir(int fd);
 
+
 typedef struct
 {
     Disk* disk;
@@ -39,5 +41,12 @@ typedef struct
     Inode* inode;
     unsigned int currentByte;
 } FileInfo;
+
+
+typedef struct
+{
+    char filename[MAX_FILENAME_LENGTH + 1];
+    unsigned int inumber;
+} DirectoryEntry;
 
 #endif //SO_TRABALHO2_MYFS_H
