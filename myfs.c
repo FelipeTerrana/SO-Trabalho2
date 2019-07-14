@@ -285,7 +285,7 @@ int myfsRead(int fd, char *buf, unsigned int nbytes)
         unsigned int firstByteInSector = offset % DISK_SECTORDATASIZE;
 
         int i;
-        for(i = firstSector; i < sectorsPerBlock; i++)
+        for(i = firstSector; i < sectorsPerBlock && bytesRead < nbytes; i++)
         {
             if(diskReadSector(file->disk, currentBlock + i, diskBuffer) == -1) return -1;
 
@@ -316,8 +316,60 @@ int myfsRead(int fd, char *buf, unsigned int nbytes)
 
 int myfsWrite(int fd, const char *buf, unsigned int nbytes)
 {
-    // TODO myfsWrite
-    return 0;
+    FileInfo* file = openFiles[fd];
+    if(file == NULL) return -1;
+
+    unsigned int fileSize = inodeGetFileSize(file->inode);
+    unsigned int bytesWritten = 0;
+    unsigned int currentInodeBlockNum = file->currentByte / file->diskBlockSize;
+    unsigned int offset = file->currentByte % file->diskBlockSize; // offset em bytes a partir do início do bloco
+    unsigned int currentBlock = inodeGetBlockAddr(file->inode, currentInodeBlockNum);
+    unsigned char diskBuffer[DISK_SECTORDATASIZE];
+
+    while(bytesWritten < nbytes)
+    {
+        unsigned int sectorsPerBlock = file->diskBlockSize / DISK_SECTORDATASIZE;
+        unsigned int firstSector = offset / DISK_SECTORDATASIZE;
+        unsigned int firstByteInSector = offset % DISK_SECTORDATASIZE;
+
+        if(currentBlock == 0)
+        {
+            currentBlock = __findFreeBlock(file->disk);
+
+            if(currentBlock == -1) break; // Disco cheio
+
+            if(inodeAddBlock(file->inode, currentBlock) == -1) // Erro na associacao do bloco livre ao inode
+            {
+                __setBlockFree(file->disk, currentBlock);
+                break;
+            }
+        }
+
+        int i;
+        for(i = firstSector; i < sectorsPerBlock && bytesWritten < nbytes; i++)
+        {
+            if(diskReadSector(file->disk, currentBlock + i, diskBuffer) == -1) return -1;
+
+            int j;
+            for(j = firstByteInSector; j < DISK_SECTORDATASIZE && bytesWritten < nbytes; j++)
+            {
+                diskBuffer[j] = buf[bytesWritten];
+                bytesWritten++;
+            }
+
+            if(diskWriteSector(file->disk, currentBlock + i, diskBuffer) == -1) return -1;
+            firstByteInSector = 0;
+        }
+
+        offset = 0;
+        currentInodeBlockNum++;
+        currentBlock = inodeGetBlockAddr(file->inode, currentInodeBlockNum);
+    }
+
+    file->currentByte += bytesWritten;
+    if(file->currentByte >= fileSize) inodeSetFileSize(file->inode, file->currentByte);
+
+    return bytesWritten;
 }
 
 
