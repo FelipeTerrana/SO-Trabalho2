@@ -428,7 +428,39 @@ int myfsReaddir(int fd, char *filename, unsigned int *inumber)
 
 int myfsLink(int fd, const char *filename, unsigned int inumber)
 {
-    // TODO myfsLink
+    if(fd < 0 || fd >= MAX_FDS) return -1;
+    FileInfo* dir = openFiles[fd];
+
+    if(dir == NULL || inodeGetFileType(dir->inode) != FILETYPE_DIR) return -1;
+
+    Inode* inodeToLink = inodeLoad(inumber, dir->disk);
+    if(inodeToLink == NULL) return -1;
+
+    DirectoryEntry entry;
+    strcpy(entry.filename, filename);
+    entry.inumber = inumber;
+
+    unsigned int previousCurrentByte = dir->currentByte;
+    unsigned int previousDirSize = inodeGetFileSize(dir->inode);
+    dir->currentByte = previousDirSize; // Para que a entrada seja inserida sempre no final do diretorio
+
+    int bytesWritten = myfsWrite(fd, (const char*) &entry, sizeof(DirectoryEntry));
+    dir->currentByte = previousCurrentByte;
+
+    if(bytesWritten != sizeof(DirectoryEntry)) // Falha na insercao de uma nova entrada
+    {
+        // Diretorio volta ao tamanho original, caso a escrita tenha sido valida mas incompleta
+        inodeSetFileSize(dir->inode, previousDirSize);
+
+        free(inodeToLink);
+        return -1;
+    }
+
+    unsigned int previousRefCount = inodeGetRefCount(inodeToLink);
+    inodeSetRefCount(inodeToLink, previousRefCount + 1);
+
+    inodeSave(inodeToLink);
+    free(inodeToLink);
     return 0;
 }
 
