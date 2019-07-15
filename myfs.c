@@ -350,7 +350,7 @@ int myfsOpen(Disk *d, const char *path)
         }
     }
     // TODO setar ref count se o arquivo estiver sendo construido na raiz
-//    Files[fdLivre]->filename = *path;
+    Files[fdLivre]->filename = *path;
     Files[fdLivre]->inumber = numeroInode; // LINHA NÃO compila
     //openFiles[fdLivre]->currentByte  =; TODO
     openFiles[fdLivre]->disk = d;
@@ -367,21 +367,18 @@ int myfsOpendir(Disk *d, const char *path)
     int numeroInode;
     int numerosInodesUsados [MAX_FDS] = {0};
     int cont = 0;
-    char *aux = (char*)malloc(sizeof(char) * sizeof(path));
-    char *aux2 = (char*)malloc(sizeof(char) * sizeof(path));
-    int i = 0;
-    while(path[i] != "/" ) { // Dir Atual fica em aux1
-        aux[i] = path[i];
-        i++;
-    }
-    int j=0;
-    for(;path[i] != '\0'; i++ ){ //Resto do path fica em aux2
-            aux2[j++] = path[i];
+    char aux[MAX_FILENAME_LENGTH+1];
+    char aux2[MAX_FILENAME_LENGTH+1];
+    int control = 0;
+    while(path[control] != '/' && path[control] != '\0' ) { // Dir Atual fica em aux1
+        aux[control] = path[control];
+        //printf("%c",aux[i]);
+        control++;
     }
     //Ver ser o diretório está no caminho atual, caso contrário chama dnv
    // bool isHere = false;
     bool dirAlreadyExists = false;
-    for(i=0;i<MAX_FDS;i++) {
+    for(int i=0;i<MAX_FDS;i++) {
         DirectoryEntry *arquivo = Files[i];
         if(arquivo != NULL ) {
             if(arquivo->filename == aux) { // verificar se o arquivo existe
@@ -429,13 +426,21 @@ int myfsOpendir(Disk *d, const char *path)
         fd = newFd;
     }
 
-    if(aux != '\0')
-          fd = myfsOpendir(d,aux2);
-    else
-        return fd;
+     if (path[control] != '\0') {
+        control = control+1;
+        int j=0;
+        for(;path[control] != '\0'; control++ ){ //Resto do path fica em aux2
+            aux2[j] = path[control];
+           // printf("%c",path[i]);
+            j++;
+        }
+        fd = myfsOpendir(d,aux2);
+    }
+
+    return fd;
 
     /*
-     char entryname[MAX_FILENAME_LENGTH+1];
+    char entryname[MAX_FILENAME_LENGTH+1];
     unsigned int inumber;
     int res = myfsReaddir(fd,entryname,inumber);
     int fd aux;
