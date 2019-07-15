@@ -277,7 +277,7 @@ int myfsOpen(Disk *d, const char *path)
         {
             if(arquivo->filename == path) // verificar se o arquivo existe
             {
-                if (openFiles[i]==NULL) // verifica se n esta aberto 
+                if (openFiles[i]==NULL) // verifica se n esta aberto
                 {
                     //openFiles[i]->currentByte  =;
                     openFiles[i]->disk = d;
@@ -297,7 +297,7 @@ int myfsOpen(Disk *d, const char *path)
             if(fdLivre == -1)
                 fdLivre = i;
         }
-        
+
     }
     if(cont==numeroInodes) // verificar se tem inode disponivel
     {
@@ -350,13 +350,112 @@ int myfsOpen(Disk *d, const char *path)
         }
     }
     // TODO setar ref count se o arquivo estiver sendo construido na raiz
-    Files[fdLivre]->filename = path;
-    Files[fdLivre]->inumber = numeroInode;
+//    Files[fdLivre]->filename = *path;
+    Files[fdLivre]->inumber = numeroInode; // LINHA NÃO compila
     //openFiles[fdLivre]->currentByte  =; TODO
     openFiles[fdLivre]->disk = d;
     //openFiles[fdLivre]->diskBlockSize =; TODO
-    openFiles[fdLivre]->inode = inodeLoad(,d);
+    openFiles[fdLivre]->inode = inodeLoad(numeroInode,d);
     return fdLivre;
+}
+
+int myfsOpendir(Disk *d, const char *path)
+{
+    // TODO myfsOpendir
+    int newFd = -1; //fd da pasta a ser aberta
+    int fd = -1; //fd auxiliar
+    int numeroInode;
+    int numerosInodesUsados [MAX_FDS] = {0};
+    int cont = 0;
+    char *aux = (char*)malloc(sizeof(char) * sizeof(path));
+    char *aux2 = (char*)malloc(sizeof(char) * sizeof(path));
+    int i = 0;
+    while(path[i] != "/" ) { // Dir Atual fica em aux1
+        aux[i] = path[i];
+        i++;
+    }
+    int j=0;
+    for(;path[i] != '\0'; i++ ){ //Resto do path fica em aux2
+            aux2[j++] = path[i];
+    }
+    //Ver ser o diretório está no caminho atual, caso contrário chama dnv
+   // bool isHere = false;
+    bool dirAlreadyExists = false;
+    for(i=0;i<MAX_FDS;i++) {
+        DirectoryEntry *arquivo = Files[i];
+        if(arquivo != NULL ) {
+            if(arquivo->filename == aux) { // verificar se o arquivo existe
+                if (openFiles[i]==NULL)  { // verifica se n esta aberto
+                    //openFiles[i]->currentByte  =;
+                    openFiles[i]->disk = d;
+                    //openFiles[i]->diskBlockSize =;
+                    openFiles[i]->inode = inodeLoad(arquivo->inumber,d);
+                }
+                dirAlreadyExists = true;
+                fd = i;
+                break;
+
+            }
+            else // determina quais inodes ja foram usados
+            {
+                numerosInodesUsados[cont] = arquivo->inumber;
+                cont++;
+            }
+        }
+        else //para encontrar fd livre para criar diretório
+        {
+            if(newFd == -1)
+                newFd = i;
+        }
+    }
+    if(cont==numeroInodes) // verificar se tem inode disponivel
+    {
+        return -1;
+    }
+    if(!dirAlreadyExists) {
+        Inode* inode = inodeCreate(numeroInode,d);
+        inodeSetFileType(inode,FILETYPE_DIR);
+        if(inodeSave(inode)!=0)
+        {
+            return -1;
+        }
+        myfsLink(newFd,aux,numeroInode);
+     //   Files[newFd]->filename = path; // LINHA NÃO compila
+        Files[newFd]->inumber = numeroInode;
+        //openFiles[newFd]->currentByte  =; TODO
+        openFiles[newFd]->disk = d;
+        //openFiles[newFd]->diskBlockSize =; TODO
+        openFiles[newFd]->inode = inodeLoad(numeroInode,d);
+        fd = newFd;
+    }
+
+    if(aux != '\0')
+          fd = myfsOpendir(d,aux2);
+    else
+        return fd;
+
+    /*
+     char entryname[MAX_FILENAME_LENGTH+1];
+    unsigned int inumber;
+    int res = myfsReaddir(fd,entryname,inumber);
+    int fd aux;
+    while ( res > 0 ) {
+       DirectoryEntry *arquivo = Files[inumber];
+       if(arquivo->filename = aux2) {
+            isHere = true;
+            o
+            break;
+        }
+       res = myfsReaddir (fd, entryname, &inumber);
+
+
+    }
+    if(isHere) {
+        return inumber;
+    }
+    else{ */
+
+
 }
 
 
@@ -496,12 +595,6 @@ int myfsClose(int fd)
 
 
 
-
-int myfsOpendir(Disk *d, const char *path)
-{
-    // TODO myfsOpendir
-    return 0;
-}
 
 
 
