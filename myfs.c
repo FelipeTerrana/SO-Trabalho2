@@ -420,7 +420,7 @@ int myfsOpendir(Disk *d, const char *path)
             return -1;
         }
         myfsLink(newFd,aux,numeroInode);
-     //   Files[newFd]->filename = path; // LINHA NÃO compila
+        Files[newFd]->filename = path; // LINHA NÃO compila
         Files[newFd]->inumber = numeroInode;
         //openFiles[newFd]->currentByte  =; TODO
         openFiles[newFd]->disk = d;
