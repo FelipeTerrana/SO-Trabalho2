@@ -53,6 +53,7 @@ FSInfo myfsInfo =
 };
 
 FileInfo* openFiles[MAX_FDS] = {NULL};
+DirectoryEntry* Files[MAX_FDS] = {NULL}; // acho que poderiamos usar esse para armazenar numero de inode dos arquivos/diretorios e seus caminhos
 
 
 
@@ -220,7 +221,7 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     superblock[SUPERBLOCK_FSID] = myfsInfo.fsid;
 
     unsigned int numInodes = (diskGetSize(d) / blockSize) / 8;
-
+    numeroInodes = numInodes; // preciso do umero de inodes para abrir arquivo
     unsigned int i;
     for(i=1; i <= numInodes; i++)
     {
@@ -258,8 +259,104 @@ int myfsFormat(Disk *d, unsigned int blockSize)
 
 int myfsOpen(Disk *d, const char *path)
 {
-    // TODO myfsOpen
-    return 0;
+    // TODO Verificar se esta certo
+    int i;
+    int booleano;
+    int n;
+    int j;
+    int idDir;
+    int numeroInode;
+    unsigned char dirpath [MAX_FILENAME_LENGTH + 1];
+    int numerosInodesUsados [MAX_FDS] = {0};
+    int cont = 0;
+    int fdLivre = -1;
+    for(i=0;i<MAX_FDS;i++)
+    {
+        DirectoryEntry *arquivo = Files[i];
+        if(arquivo != NULL )
+        {
+            if(arquivo->filename == path) // verificar se o arquivo existe
+            {
+                if (openFiles[i]==NULL) // verifica se n esta aberto 
+                {
+                    //openFiles[i]->currentByte  =;
+                    openFiles[i]->disk = d;
+                    //openFiles[i]->diskBlockSize =;
+                    openFiles[i]->inode = inodeLoad(arquivo->inumber,d);
+                }
+                return i;
+            }
+            else // determina quais inodes ja foram usados
+            {
+                numerosInodesUsados[cont] = arquivo->inumber;
+                cont++;
+            }
+        }
+        else //para encontrar fd livre
+        {
+            if(fdLivre == -1)
+                fdLivre = i;
+        }
+        
+    }
+    if(cont==numeroInodes) // verificar se tem inode disponivel
+    {
+        return -1;
+    }
+    for(int i = 1; i <= cont; i++) // descobrir numero de inode livre
+    {
+        booleano = 1;
+        for(j=0;j<cont;j++)
+        {
+            if (numerosInodesUsados[j]==i)
+            {
+                booleano = 0;
+            }
+        }
+        if(booleano)
+        {
+            numeroInode = i;
+            break;
+        }
+    }
+
+    Inode* inode = inodeCreate(numeroInode,d);
+    inodeSetFileType(inode,FILETYPE_REGULAR);
+    if(inodeSave(inode)!=0)
+    {
+        return -1;
+    }
+    for(i=0;path[i] != '\0';i++);
+    n = i-1;
+    for(i=n;i>=0;i--)  // para encontrar diretorio (se tiver do arquivo), acho melhor fazemos opendir recursivo abrindo diretorios ate chegar a raiz quando for abrir um diretorio  , ou dependendo usar o vetor files
+    {
+        if(path[i]=='/' && i!=0)
+        {
+            for(j=0;j>=i-1;j++)
+            {
+                dirpath[j]=path[j];
+            }
+            dirpath[j]='\0';
+            idDir = myfsOpendir(d,dirpath); // a partir do comentario acima acredito que passando um caminho do diretorio principal
+            if(idDir>-1)
+            {
+                myfsLink(idDir,path,numeroInode);
+            }
+            else
+            {
+                return -1;
+            }
+            break;
+        }
+    }
+    // TODO setar ref count se o arquivo estiver sendo construido na raiz
+    Files[fdLivre]->filename = path;
+    Files[fdLivre]->inumber = numeroInode;
+    //openFiles[fdLivre]->currentByte  =; TODO
+    openFiles[fdLivre]->disk = d;
+    //openFiles[fdLivre]->diskBlockSize =; TODO
+    openFiles[fdLivre]->inode = inodeLoad(,d);
+    return fdLivre;
 }
 
 

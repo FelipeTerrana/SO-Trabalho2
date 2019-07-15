@@ -48,5 +48,6 @@ typedef struct
     char filename[MAX_FILENAME_LENGTH + 1];
     unsigned int inumber;
 } DirectoryEntry;
+int numeroInodes; //para saber numero total disponivel de inodes
 
 #endif //SO_TRABALHO2_MYFS_H
