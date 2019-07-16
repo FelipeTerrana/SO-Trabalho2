@@ -19,174 +19,9 @@
 #include <string.h>
 #include "disk.h"
 #include "inode.h"
+#include "myfsInternalFunctions.h"
 #include "util.h"
 #include "vfs.h"
-
-/// Posicoes das informacoes do disco no superbloco. O superbloco sempre ocupa o setor 0
-#define SUPERBLOCK_BLOCKSIZE 0
-#define SUPERBLOCK_FSID sizeof(unsigned int)
-#define SUPERBLOCK_FREE_SPACE_SECTOR (sizeof(unsigned int) + sizeof(char))
-#define SUPERBLOCK_FIRST_BLOCK_SECTOR (2 * sizeof(unsigned int) + sizeof(char))
-#define SUPERBLOCK_NUM_BLOCKS (3 * sizeof(unsigned int) + sizeof(char))
-
-#define ROOT_DIRECTORY_INODE 1
-
-// 255 significa que os 8 bits sao iguais a 1. Se for diferente de 255 pelo menos um bit e 0, representando
-// um bloco livre no disco
-#define NON_ZERO_BYTE 255
-
-int myfsSlot = -1;
-
-FSInfo myfsInfo =
-{
-    0,      // fsid
-    "myfs", // fsname
-    myfsIsIdle,
-    myfsFormat,
-    myfsOpen,
-    myfsRead,
-    myfsWrite,
-    myfsClose,
-    myfsOpendir,
-    myfsReaddir,
-    myfsLink,
-    myfsUnlink,
-    myfsClosedir
-};
-
-FileInfo* openFiles[MAX_FDS] = {NULL};
-
-
-
-// Retorna o primeiro bit igual a 0 no byte de entrada, procurando do bit menos significativo para o mais significativo.
-// Os bits são considerados do 0 ao 7 e, caso todos os bits sejam 1, retorna -1
-int __firstZeroBit(unsigned char byte)
-{
-    if(byte == NON_ZERO_BYTE) return -1;
-
-    int i;
-    unsigned char mask = 1;
-    for(i=0; i < sizeof(unsigned char); i++)
-    {
-        if( (mask & byte) == 0 ) return i;
-        mask <<= (unsigned char) 1;
-    }
-
-    return -1;
-}
-
-
-// Retorna o byte de entrada com o bit na posicao informada transformado em 1. Bits sao contados do menos significativo
-// para o mais significativo, contando do 0 ao 7
-unsigned char __setBitToOne(unsigned char byte, unsigned int bit)
-{
-    unsigned char mask = (unsigned char) 1 << bit;
-    return byte | mask;
-}
-
-
-// Retorna o byte de entrada com o bit na posicao informada transformado em 0. Bits sao contados do menos significativo
-// para o mais significativo, contando do 0 ao 7
-unsigned char __setBitToZero(unsigned char byte, unsigned int bit)
-{
-    unsigned char mask = ((unsigned char) 1 << bit);
-    mask = ~mask;
-    return byte & mask;
-}
-
-
-
-// Encontra um bloco livre no disco e o marca como ocupado se este estiver em formato myfs. Retorna 0 se nao houver
-// bloco livre ou se o disco nao estiver formatado corretamente
-unsigned int __findFreeBlock(Disk *d)
-{
-    unsigned char buffer[DISK_SECTORDATASIZE];
-    if(diskReadSector(d, 0, buffer) == -1) return 0; // Superbloco inicialmente carregado no buffer
-
-    if(buffer[SUPERBLOCK_FSID] != myfsInfo.fsid) return 0;
-
-    unsigned int sectorsPerBlock;
-    char2ul(&buffer[SUPERBLOCK_BLOCKSIZE], &sectorsPerBlock);
-    sectorsPerBlock /= DISK_SECTORDATASIZE;
-
-    unsigned int numBlocks;
-    char2ul(&buffer[SUPERBLOCK_NUM_BLOCKS], &numBlocks);
-
-    unsigned int firstBlock;
-    char2ul(&buffer[SUPERBLOCK_FIRST_BLOCK_SECTOR], &firstBlock);
-
-    unsigned int freeSpaceSector;
-    char2ul(&buffer[SUPERBLOCK_FREE_SPACE_SECTOR], &freeSpaceSector);
-
-    unsigned int freeSpaceSize = firstBlock - freeSpaceSector;
-
-    unsigned int i;
-    for(i = freeSpaceSector; i < freeSpaceSector + freeSpaceSize; i++)
-    {
-        if(diskReadSector(d, i, buffer) == -1) return 0;
-
-        unsigned int j;
-        for(j=0; j < DISK_SECTORDATASIZE; j++)
-        {
-            int freeBit = __firstZeroBit(buffer[j]);
-            if(freeBit != -1)
-            {
-                unsigned int freeBlock = firstBlock +
-                             (i - freeSpaceSector) * DISK_SECTORDATASIZE * 8 * sectorsPerBlock +
-                             j * 8 * sectorsPerBlock +
-                             freeBit * sectorsPerBlock;
-
-                // Bloco livre excede a regiao de blocos disponiveis, nenhum bloco livre valido foi encontrado
-                if((freeBlock - firstBlock) / sectorsPerBlock >= numBlocks) return 0;
-
-                buffer[j] = __setBitToOne(buffer[j], freeBit);
-                if(diskWriteSector(d, i, buffer) == -1) return 0;
-
-                return freeBlock;
-            }
-        }
-    }
-
-    return -1;
-}
-
-
-
-// Dado um bloco em um disco formatado em myfs, marca o bloco como livre para uso. Retorna true (!= 0) se a operacao
-// foi bem sucedida e false (0) se algum erro ocorreu no processo
-bool __setBlockFree(Disk *d, unsigned int block)
-{
-    unsigned char buffer[DISK_SECTORDATASIZE];
-    if(diskReadSector(d, 0, buffer) == -1) return false;
-
-    if(buffer[SUPERBLOCK_FSID] != myfsInfo.fsid) return false;
-
-    unsigned int sectorsPerBlock;
-    char2ul(&buffer[SUPERBLOCK_BLOCKSIZE], &sectorsPerBlock);
-    sectorsPerBlock /= DISK_SECTORDATASIZE;
-
-    unsigned int numBlocks;
-    char2ul(&buffer[SUPERBLOCK_NUM_BLOCKS], &numBlocks);
-
-    unsigned int firstBlock;
-    char2ul(&buffer[SUPERBLOCK_FIRST_BLOCK_SECTOR], &firstBlock);
-
-    unsigned int freeSpaceStartSector;
-    char2ul(&buffer[SUPERBLOCK_FREE_SPACE_SECTOR], &freeSpaceStartSector);
-
-    // Bloco de entrada excede a regiao de blocos disponiveis
-    if((block - firstBlock) / sectorsPerBlock >= numBlocks) return false;
-
-    unsigned int blockFreeSpaceSector = ((block - firstBlock) / sectorsPerBlock) / (DISK_SECTORDATASIZE * 8);
-    if(diskReadSector(d, blockFreeSpaceSector, buffer) == -1) return false;
-
-    unsigned int blockFreeSpaceBit = ((block - firstBlock) / sectorsPerBlock) % (DISK_SECTORDATASIZE * 8);
-    buffer[blockFreeSpaceBit / 8] = __setBitToZero(buffer[blockFreeSpaceBit / 8], blockFreeSpaceBit % 8);
-
-    if(diskWriteSector(d, blockFreeSpaceSector, buffer) == -1) return false;
-
-    return true;
-}
 
 
 
@@ -298,55 +133,6 @@ int myfsFormat(Disk *d, unsigned int blockSize)
 
 
 
-// Le e retorna o tamanho do bloco de um disco em bytes, assumindo que ele esteja formatado em myfs.
-// Retorna 0 em caso de erro
-unsigned int __getBlockSize(Disk *d)
-{
-    unsigned char superblock[DISK_SECTORDATASIZE];
-    if(diskReadSector(d, 0, superblock) == -1) return 0;
-
-    if(superblock[SUPERBLOCK_FSID] != myfsInfo.fsid) return 0;
-
-    unsigned int blockSize;
-    char2ul(&superblock[SUPERBLOCK_BLOCKSIZE], &blockSize);
-
-    return blockSize;
-}
-
-
-
-
-// Funciona como um openDir para o diretorio raiz de um disco. Pode ser fechado normalmnte atraves de myfsClosedir.
-// Retorna um descritor de arquivo em caso de sucesso e -1 em caso de erro
-int __openRoot(Disk *d)
-{
-    int fd;
-    for(fd = 1; fd <= MAX_FDS; fd++)
-    {
-        if(openFiles[fd-1] == NULL) break;
-    }
-
-    if(fd > MAX_FDS) return -1;
-
-    FileInfo* root = openFiles[fd-1] = malloc(sizeof(FileInfo));
-    root->disk = d;
-    root->diskBlockSize = __getBlockSize(d);
-    root->inode = inodeLoad(ROOT_DIRECTORY_INODE, d);
-    root->currentByte = 0;
-
-    if(root->diskBlockSize == 0 || root->inode == NULL)
-    {
-        free(root);
-        openFiles[fd-1] = NULL;
-        return -1;
-    }
-
-    return fd;
-}
-
-
-
-
 int myfsOpen(Disk *d, const char *path)
 {
     int lastBar;
@@ -435,6 +221,8 @@ int myfsOpen(Disk *d, const char *path)
     inodeSetFileSize(inode, 0);
     inodeSetRefCount(inode, 0);
     inodeSetFileType(inode, FILETYPE_REGULAR);
+    inodeSave(inode);
+    free(inode);
 
     myfsLink(fd, path, inumber); // TODO tratar erro nos links
 
@@ -445,7 +233,7 @@ int myfsOpen(Disk *d, const char *path)
     openFiles[fd-1] = malloc(sizeof(FileInfo));
     openFiles[fd-1]->disk = d;
     openFiles[fd-1]->diskBlockSize = blockSize;
-    openFiles[fd-1]->inode = inode;
+    openFiles[fd-1]->inode = inodeLoad(inumber, d); // Carrega o inode novamente do disco para que o link tenha efeito
     openFiles[fd-1]->currentByte = 0;
 
     free(dirPath);
@@ -783,9 +571,13 @@ int myfsUnlink(int fd, const char *filename)
 
     if(dir == NULL || inodeGetFileType(dir->inode) != FILETYPE_DIR) return -1;
 
+    if(strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) return -1;
+
     unsigned int previousCurrentByte = dir->currentByte;
     dir->currentByte = 0; // Para percorrer as entradas de dir desde o inicio
 
+    Inode* inodeToUnlink = NULL;
+    unsigned int previousRefCount = 0;
     DirectoryEntry entry;
     unsigned int inumber = 0;
     while(myfsRead(fd, (char*) &entry, sizeof(DirectoryEntry)) == sizeof(DirectoryEntry))
@@ -793,6 +585,28 @@ int myfsUnlink(int fd, const char *filename)
         if(strcmp(entry.filename, filename) == 0)
         {
             inumber = entry.inumber;
+            inodeToUnlink = inodeLoad(inumber, dir->disk);
+            if(inodeToUnlink == NULL) return -1;
+
+            previousRefCount = inodeGetRefCount(inodeToUnlink);
+
+            // Se esta for a ultima referencia ao inode, ele deve ser liberado. Para que isso aconteca, e necessario
+            // confirmar se o inode nao esta aberto em algum arquivo e, caso esteja aberto, o unlink nao e realizado
+            if( (inodeGetFileType(inodeToUnlink) == FILETYPE_REGULAR && previousRefCount == 1) ||
+                (inodeGetFileType(inodeToUnlink) == FILETYPE_DIR && previousRefCount == 2) )
+            {
+                int i;
+                for(i=1; i <= MAX_FDS; i++)
+                {
+                    if(openFiles[i-1] != NULL && inodeGetNumber(openFiles[i-1]->inode) == inumber)
+                    {
+                        free(inodeToUnlink);
+                        return -1;
+                    }
+                }
+            }
+
+            inodeSetRefCount(inodeToUnlink, previousRefCount - 1);
 
             // Para remover a entrada encontrada, percorre-se o diretorio lendo as entradas da frente e escrevendo sobre
             // as anteriores, "arrastando" as entradas para tras
@@ -818,30 +632,14 @@ int myfsUnlink(int fd, const char *filename)
         }
     }
 
+    if(inumber == 0) return -1; // Entrada nao encontrada
     dir->currentByte = previousCurrentByte;
-    if(inumber == 0) return -1;
 
-    Inode* inodeToUnlink = inodeLoad(inumber, dir->disk);
-    if(inodeToUnlink == NULL) return -1;
+    if(inodeGetFileType(inodeToUnlink) == FILETYPE_REGULAR && previousRefCount == 1)
+        __deleteFile(dir->disk, inodeToUnlink);
 
-    unsigned int previousRefCount = inodeGetRefCount(inodeToUnlink);
-    inodeSetRefCount(inodeToUnlink, previousRefCount - 1);
-
-    // TODO tratar diretorios de forma diferente
-    if(previousRefCount == 1) // Ultima referencia do inode foi removida, libera os blocos ocupados por ele
-    {
-        unsigned int blockCount = 0;
-        unsigned int currentBlock = inodeGetBlockAddr(inodeToUnlink, blockCount);
-
-        while (currentBlock > 0)
-        {
-            __setBlockFree(dir->disk, currentBlock);
-            blockCount++;
-            currentBlock = inodeGetBlockAddr(inodeToUnlink, blockCount);
-        }
-
-        inodeClear(inodeToUnlink);
-    }
+    else if(inodeGetFileType(inodeToUnlink) == FILETYPE_DIR && previousRefCount == 2)
+        __deleteDir(dir->disk, inodeToUnlink, dir->inode);
 
     inodeSave(inodeToUnlink);
     free(inodeToUnlink);
