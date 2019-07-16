@@ -242,7 +242,7 @@ int myfsOpen(Disk *d, const char *path)
 
     myfsClosedir(fd);
 
-    unsigned int blockSize = __getBlockSize(d); // TODO tratar erro
+    unsigned int blockSize = __getBlockSize(d);
 
     openFiles[fd-1] = malloc(sizeof(FileInfo));
     openFiles[fd-1]->disk = d;
@@ -262,6 +262,10 @@ int myfsRead(int fd, char *buf, unsigned int nbytes)
     if(fd <= 0 || fd > MAX_FDS) return -1;
     FileInfo* file = openFiles[fd-1];
     if(file == NULL) return -1;
+
+    unsigned int inumber = inodeGetNumber(file->inode);
+    free(file->inode);
+    file->inode = inodeLoad(inumber, file->disk);
 
     unsigned int fileSize = inodeGetFileSize(file->inode);
     unsigned int bytesRead = 0;
@@ -313,6 +317,10 @@ int myfsWrite(int fd, const char *buf, unsigned int nbytes)
     if(fd <= 0 || fd > MAX_FDS) return -1;
     FileInfo* file = openFiles[fd-1];
     if(file == NULL) return -1;
+
+    unsigned int inumber = inodeGetNumber(file->inode); // Atualiza inode do arquivo na memoria
+    free(file->inode);
+    file->inode = inodeLoad(inumber, file->disk);
 
     unsigned int fileSize = inodeGetFileSize(file->inode);
     unsigned int bytesWritten = 0;
@@ -547,6 +555,10 @@ int myfsLink(int fd, const char *filename, unsigned int inumber) // TODO conferi
 
     if(dir == NULL || inodeGetFileType(dir->inode) != FILETYPE_DIR) return -1;
 
+    unsigned int dirInumber = inodeGetNumber(dir->inode); // Atualiza inode do diretorio na memoria
+    free(dir->inode);
+    dir->inode = inodeLoad(dirInumber, dir->disk);
+
     Inode* inodeToLink = inodeLoad(inumber, dir->disk);
     if(inodeToLink == NULL) return -1;
 
@@ -588,6 +600,10 @@ int myfsUnlink(int fd, const char *filename)
     FileInfo* dir = openFiles[fd-1];
 
     if(dir == NULL || inodeGetFileType(dir->inode) != FILETYPE_DIR) return -1;
+
+    unsigned int dirInumber = inodeGetNumber(dir->inode); // Atualiza inode do diretorio na memoria
+    free(dir->inode);
+    dir->inode = inodeLoad(dirInumber, dir->disk);
 
     if(strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) return -1;
 
