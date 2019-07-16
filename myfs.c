@@ -29,6 +29,8 @@
 #define SUPERBLOCK_FIRST_BLOCK_SECTOR (2 * sizeof(unsigned int) + sizeof(char))
 #define SUPERBLOCK_NUM_BLOCKS (3 * sizeof(unsigned int) + sizeof(char))
 
+#define ROOT_DIRECTORY_INODE 1
+
 // 255 significa que os 8 bits sao iguais a 1. Se for diferente de 255 pelo menos um bit e 0, representando
 // um bloco livre no disco
 #define NON_ZERO_BYTE 255
@@ -232,7 +234,7 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     // Espaco livre e representado por um mapa de bits, em que um bit 0 significa que o bloco correspondente e livre
     // e um bit 1 significa em uso
     unsigned int freeSpaceSector = inodeAreaBeginSector() + numInodes / inodeNumInodesPerSector();
-    unsigned int freeSpaceSize   = (diskGetSize(d) / blockSize) / (sizeof(unsigned char) * 8 * DISK_SECTORDATASIZE);
+    unsigned int freeSpaceSize   = 1 + (diskGetSize(d) / blockSize) / (sizeof(unsigned char) * 8 * DISK_SECTORDATASIZE);
 
     ul2char(freeSpaceSector, &superblock[SUPERBLOCK_FREE_SPACE_SECTOR]);
 
@@ -250,6 +252,41 @@ int myfsFormat(Disk *d, unsigned int blockSize)
         if(diskWriteSector(d, freeSpaceSector + i, freeSpace) == -1) return -1;
     }
 
+    // Define um inode fixo como diretorio raiz
+    Inode* root = inodeLoad(ROOT_DIRECTORY_INODE, d);
+    if(root == NULL) return -1;
+
+    inodeSetFileSize(root, 2 * sizeof(DirectoryEntry));
+    inodeSetRefCount(root, 3);
+    inodeSetFileType(root, FILETYPE_DIR);
+
+    int rootBlock = __findFreeBlock(d);
+
+    if(rootBlock == -1 || inodeAddBlock(root, rootBlock) == -1)
+    {
+        free(root);
+        return -1;
+    }
+
+    numBlocks--; // Desconsidera bloco ocupado pela raiz
+
+    DirectoryEntry current, parent;
+    current.inumber = parent.inumber = ROOT_DIRECTORY_INODE;
+    strcpy(current.filename, ".");
+    strcpy(parent.filename, "..");
+
+    unsigned char rootBuffer[DISK_SECTORDATASIZE]; // Transfere os dados das entradas . e .. direto para o setor da raiz
+    for(i=0; i < sizeof(DirectoryEntry); i++) rootBuffer[i] = ((char*) &current) [i];
+    for(i=0; i < sizeof(DirectoryEntry); i++) rootBuffer[i + sizeof(DirectoryEntry)] = ((char*) &parent) [i];
+
+    if(diskWriteSector(d, rootBlock, rootBuffer) == -1 )
+    {
+        free(root);
+        return -1;
+    }
+
+    inodeSave(root);
+    free(root);
     return numBlocks > 0 ? numBlocks : -1;
 }
 
