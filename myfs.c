@@ -344,8 +344,107 @@ int __openRoot(Disk *d)
 
 int myfsOpen(Disk *d, const char *path)
 {
-    // TODO myfsOpen
-    return 0;
+    int lastBar;
+    for(lastBar = strlen(path) - 1; lastBar >= 0 && path[lastBar] != '/'; lastBar--);
+
+    if(lastBar < 0) return -1;
+
+    // dirpath representa o caminho da pasta pai do arquivo a ser aberto
+    char* dirPath = malloc( (strlen(path) + 1) * sizeof(char) );
+    strcpy(dirPath, path);
+    dirPath[lastBar] = '\0';
+
+    path += lastBar + 1; // path passa a apontar para o inicio do nome do arquivo dentro do diretorio pai
+
+    int fd = myfsOpendir(d, dirPath);
+    if(fd == -1)
+    {
+        free(dirPath);
+        return -1;
+    }
+
+    DirectoryEntry entry;
+    while(myfsReaddir(fd, entry.filename, &entry.inumber) == 1)
+    {
+        if(strcmp(entry.filename, path) == 0)
+        {
+            Inode* inode = inodeLoad(entry.inumber, d);
+            unsigned int blockSize = __getBlockSize(d);
+            myfsClosedir(fd);
+
+            if(inode == NULL || blockSize == 0)
+            {
+                free(dirPath);
+                return -1;
+            }
+
+            openFiles[fd] = malloc(sizeof(FileInfo));
+            openFiles[fd]->disk = d;
+            openFiles[fd]->diskBlockSize = blockSize;
+            openFiles[fd]->inode = inode;
+            openFiles[fd]->currentByte = 0;
+
+            return fd;
+        }
+    }
+
+    // Arquivo nao encontrado, cria um novo
+    unsigned int inumber = inodeFindFreeInode(ROOT_DIRECTORY_INODE + 1, d);
+    if(inumber == 0)
+    {
+        myfsClosedir(fd);
+        free(dirPath);
+        return -1;
+    }
+
+    Inode* inode = inodeLoad(inumber, d);
+    if(inode == NULL)
+    {
+        myfsClosedir(fd);
+        free(dirPath);
+        return -1;
+    }
+
+    inodeSetFileType(inode, FILETYPE_DIR);
+    inodeSetRefCount(inode, 0);
+    inodeSetFileSize(inode, 0);
+
+    unsigned int newFileFirstBlock = __findFreeBlock(d);
+    if(newFileFirstBlock == 0)
+    {
+        free(inode);
+        myfsClosedir(fd);
+        free(dirPath);
+        return -1;
+    }
+
+    if(inodeAddBlock(inode, newFileFirstBlock) == -1)
+    {
+        free(inode);
+        myfsClosedir(fd);
+        free(dirPath);
+        __setBlockFree(d, newFileFirstBlock);
+        return -1;
+    }
+
+    inodeSetFileSize(inode, 0);
+    inodeSetRefCount(inode, 0);
+    inodeSetFileType(inode, FILETYPE_REGULAR);
+
+    myfsLink(fd, path, inumber); // TODO tratar erro nos links
+
+    myfsClosedir(fd);
+
+    unsigned int blockSize = __getBlockSize(d); // TODO tratar erro
+
+    openFiles[fd] = malloc(sizeof(FileInfo));
+    openFiles[fd]->disk = d;
+    openFiles[fd]->diskBlockSize = blockSize;
+    openFiles[fd]->inode = inode;
+    openFiles[fd]->currentByte = 0;
+
+    free(dirPath);
+    return fd;
 }
 
 
@@ -561,6 +660,16 @@ int myfsOpendir(Disk *d, const char *path)
                 return -1;
             }
 
+            if(inodeAddBlock(newDirInode, newDirFirstBlock) == -1)
+            {
+                free(newDirInode);
+                myfsClosedir(currentDirFd);
+                __setBlockFree(d, newDirFirstBlock);
+                return -1;
+            }
+
+            myfsLink(currentDirFd, nextDirname, newDirInumber);
+
             DirectoryEntry current;
             current.inumber = newDirInumber;
             strcpy(current.filename, ".");
@@ -709,6 +818,7 @@ int myfsUnlink(int fd, const char *filename)
     unsigned int previousRefCount = inodeGetRefCount(inodeToUnlink);
     inodeSetRefCount(inodeToUnlink, previousRefCount - 1);
 
+    // TODO tratar diretorios de forma diferente
     if(previousRefCount == 1) // Ultima referencia do inode foi removida, libera os blocos ocupados por ele
     {
         unsigned int blockCount = 0;
