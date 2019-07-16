@@ -119,8 +119,13 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     openFiles[1-1]->inode = root;
     openFiles[1-1]->currentByte = 0;
 
-    myfsLink(1, current.filename, current.inumber);
-    myfsLink(1, parent.filename, parent.inumber);
+    if(myfsLink(1, current.filename, current.inumber) == -1 || myfsLink(1, parent.filename, parent.inumber) == -1)
+    {
+        free(openFiles[1-1]);
+        openFiles[1-1] = previousFirstFD;
+
+        return -1;
+    }
 
     free(openFiles[1-1]);
     openFiles[1-1] = previousFirstFD;
@@ -224,7 +229,16 @@ int myfsOpen(Disk *d, const char *path)
     inodeSave(inode);
     free(inode);
 
-    myfsLink(fd, path, inumber); // TODO tratar erro nos links
+    if(myfsLink(fd, path, inumber) == -1)
+    {
+        myfsClosedir(fd);
+        free(dirPath);
+        __setBlockFree(d, newFileFirstBlock);
+        inode = inodeLoad(inumber, d);
+        inodeClear(inode);
+        free(inode);
+        return -1;
+    }
 
     myfsClosedir(fd);
 
@@ -456,15 +470,14 @@ int myfsOpendir(Disk *d, const char *path)
                 return -1;
             }
 
-            if(inodeAddBlock(newDirInode, newDirFirstBlock) == -1)
+            if( inodeAddBlock(newDirInode, newDirFirstBlock) == -1 ||
+                myfsLink(currentDirFd, nextDirname, newDirInumber) == -1 )
             {
                 free(newDirInode);
                 myfsClosedir(currentDirFd);
                 __setBlockFree(d, newDirFirstBlock);
                 return -1;
             }
-
-            myfsLink(currentDirFd, nextDirname, newDirInumber);
 
             DirectoryEntry current;
             current.inumber = newDirInumber;
@@ -481,8 +494,13 @@ int myfsOpendir(Disk *d, const char *path)
             openFiles[currentDirFd-1]->inode = newDirInode;
             openFiles[currentDirFd-1]->currentByte = 0;
 
-            myfsLink(currentDirFd, current.filename, current.inumber);
-            myfsLink(currentDirFd, parent.filename, parent.inumber);
+            if( myfsLink(currentDirFd, current.filename, current.inumber) == -1 ||
+                myfsLink(currentDirFd, parent.filename, parent.inumber) == -1 )
+            {
+                __deleteFile(d, newDirInode); // Nao usa __deleteDir pois o novo diretorio nao e um diretorio valido
+                myfsClosedir(currentDirFd);
+                return -1;
+            }
 
             inodeSave(newDirInode);
             return currentDirFd;
