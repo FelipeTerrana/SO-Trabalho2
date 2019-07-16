@@ -309,7 +309,7 @@ unsigned int __getBlockSize(Disk *d)
 
 
 
-// Funciona como um openDir para o diretorio raiz de um disco. Pode ser fechado normalmnte atraves de myfsCloseDir.
+// Funciona como um openDir para o diretorio raiz de um disco. Pode ser fechado normalmnte atraves de myfsClosedir.
 // Retorna um descritor de arquivo em caso de sucesso e -1 em caso de erro
 int __openRoot(Disk *d)
 {
@@ -631,6 +631,5 @@ int myfsUnlink(int fd, const char *filename)
 
 int myfsClosedir(int fd)
 {
-    // TODO myfsClosedir
-    return 0;
+    return myfsClose(fd);
 }
