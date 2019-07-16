@@ -556,7 +556,10 @@ int myfsWrite(int fd, const char *buf, unsigned int nbytes)
 
         offset = 0;
         currentInodeBlockNum++;
-        currentBlock = inodeGetBlockAddr(file->inode, currentInodeBlockNum);
+
+        currentBlock = (file->currentByte + bytesWritten < fileSize) ?
+                        inodeGetBlockAddr(file->inode, currentInodeBlockNum) :
+                        0;
     }
 
     file->currentByte += bytesWritten;
@@ -810,6 +813,7 @@ int myfsUnlink(int fd, const char *filename)
 
             unsigned int previousDirSize = inodeGetFileSize(dir->inode);
             inodeSetFileSize(dir->inode, previousDirSize - sizeof(DirectoryEntry));
+            inodeSave(dir->inode);
             break;
         }
     }
