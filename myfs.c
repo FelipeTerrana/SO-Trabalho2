@@ -202,9 +202,9 @@ int myfsIsIdle(Disk *d)
 {
     int i;
 
-    for(i=0; i < MAX_FDS; i++)
+    for(i=1; i <= MAX_FDS; i++)
     {
-        FileInfo* file = openFiles[i];
+        FileInfo* file = openFiles[i-1];
         if(file != NULL && diskGetId(d) == diskGetId(file->disk)) return false;
     }
 
@@ -316,14 +316,14 @@ unsigned int __getBlockSize(Disk *d)
 int __openRoot(Disk *d)
 {
     int fd;
-    for(fd = 0; fd < MAX_FDS; fd++)
+    for(fd = 1; fd <= MAX_FDS; fd++)
     {
-        if(openFiles[fd] == NULL) break;
+        if(openFiles[fd-1] == NULL) break;
     }
 
-    if(fd == MAX_FDS) return -1;
+    if(fd > MAX_FDS) return -1;
 
-    FileInfo* root = openFiles[fd] = malloc(sizeof(FileInfo));
+    FileInfo* root = openFiles[fd-1] = malloc(sizeof(FileInfo));
     root->disk = d;
     root->diskBlockSize = __getBlockSize(d);
     root->inode = inodeLoad(ROOT_DIRECTORY_INODE, d);
@@ -332,7 +332,7 @@ int __openRoot(Disk *d)
     if(root->diskBlockSize == 0 || root->inode == NULL)
     {
         free(root);
-        openFiles[fd] = NULL;
+        openFiles[fd-1] = NULL;
         return -1;
     }
 
@@ -378,11 +378,11 @@ int myfsOpen(Disk *d, const char *path)
                 return -1;
             }
 
-            openFiles[fd] = malloc(sizeof(FileInfo));
-            openFiles[fd]->disk = d;
-            openFiles[fd]->diskBlockSize = blockSize;
-            openFiles[fd]->inode = inode;
-            openFiles[fd]->currentByte = 0;
+            openFiles[fd-1] = malloc(sizeof(FileInfo));
+            openFiles[fd-1]->disk = d;
+            openFiles[fd-1]->diskBlockSize = blockSize;
+            openFiles[fd-1]->inode = inode;
+            openFiles[fd-1]->currentByte = 0;
 
             return fd;
         }
@@ -437,11 +437,11 @@ int myfsOpen(Disk *d, const char *path)
 
     unsigned int blockSize = __getBlockSize(d); // TODO tratar erro
 
-    openFiles[fd] = malloc(sizeof(FileInfo));
-    openFiles[fd]->disk = d;
-    openFiles[fd]->diskBlockSize = blockSize;
-    openFiles[fd]->inode = inode;
-    openFiles[fd]->currentByte = 0;
+    openFiles[fd-1] = malloc(sizeof(FileInfo));
+    openFiles[fd-1]->disk = d;
+    openFiles[fd-1]->diskBlockSize = blockSize;
+    openFiles[fd-1]->inode = inode;
+    openFiles[fd-1]->currentByte = 0;
 
     free(dirPath);
     return fd;
@@ -452,8 +452,8 @@ int myfsOpen(Disk *d, const char *path)
 
 int myfsRead(int fd, char *buf, unsigned int nbytes)
 {
-    if(fd < 0 || fd >= MAX_FDS) return -1;
-    FileInfo* file = openFiles[fd];
+    if(fd <= 0 || fd > MAX_FDS) return -1;
+    FileInfo* file = openFiles[fd-1];
     if(file == NULL) return -1;
 
     unsigned int fileSize = inodeGetFileSize(file->inode);
@@ -503,8 +503,8 @@ int myfsRead(int fd, char *buf, unsigned int nbytes)
 
 int myfsWrite(int fd, const char *buf, unsigned int nbytes)
 {
-    if(fd < 0 || fd >= MAX_FDS) return -1;
-    FileInfo* file = openFiles[fd];
+    if(fd <= 0 || fd > MAX_FDS) return -1;
+    FileInfo* file = openFiles[fd-1];
     if(file == NULL) return -1;
 
     unsigned int fileSize = inodeGetFileSize(file->inode);
@@ -569,8 +569,8 @@ int myfsWrite(int fd, const char *buf, unsigned int nbytes)
 
 int myfsClose(int fd)
 {
-    if(fd < 0 || fd >= MAX_FDS) return -1;
-    FileInfo* file = openFiles[fd];
+    if(fd <= 0 || fd > MAX_FDS) return -1;
+    FileInfo* file = openFiles[fd-1];
 
     if(file == NULL) return -1;
 
@@ -578,7 +578,7 @@ int myfsClose(int fd)
     free(file->inode);
 
     free(file);
-    openFiles[fd] = NULL;
+    openFiles[fd-1] = NULL;
     return 0;
 }
 
@@ -590,7 +590,7 @@ int myfsOpendir(Disk *d, const char *path)
     int currentDirFd = __openRoot(d);
     if(currentDirFd == -1) return -1;
 
-    unsigned int blockSize = openFiles[currentDirFd]->diskBlockSize;
+    unsigned int blockSize = openFiles[currentDirFd-1]->diskBlockSize;
 
     if(path[0] == '/') path++; // Desconsidera a primeira barra, ja que todos os caminhos se iniciam na raiz
 
@@ -620,11 +620,11 @@ int myfsOpendir(Disk *d, const char *path)
                 foundEntry = true;
                 myfsClosedir(currentDirFd);
 
-                openFiles[currentDirFd] = malloc(sizeof(FileInfo));
-                openFiles[currentDirFd]->disk = d;
-                openFiles[currentDirFd]->diskBlockSize = blockSize;
-                openFiles[currentDirFd]->inode = nextDirInode;
-                openFiles[currentDirFd]->currentByte = 0;
+                openFiles[currentDirFd-1] = malloc(sizeof(FileInfo));
+                openFiles[currentDirFd-1]->disk = d;
+                openFiles[currentDirFd-1]->diskBlockSize = blockSize;
+                openFiles[currentDirFd-1]->inode = nextDirInode;
+                openFiles[currentDirFd-1]->currentByte = 0;
 
                 break;
             }
@@ -675,15 +675,15 @@ int myfsOpendir(Disk *d, const char *path)
             strcpy(current.filename, ".");
 
             DirectoryEntry parent;
-            parent.inumber = inodeGetNumber(openFiles[currentDirFd]->inode);
+            parent.inumber = inodeGetNumber(openFiles[currentDirFd-1]->inode);
             strcpy(parent.filename, "..");
 
             myfsClosedir(currentDirFd);
-            openFiles[currentDirFd] = malloc(sizeof(FileInfo));
-            openFiles[currentDirFd]->disk = d;
-            openFiles[currentDirFd]->diskBlockSize = blockSize;
-            openFiles[currentDirFd]->inode = newDirInode;
-            openFiles[currentDirFd]->currentByte = 0;
+            openFiles[currentDirFd-1] = malloc(sizeof(FileInfo));
+            openFiles[currentDirFd-1]->disk = d;
+            openFiles[currentDirFd-1]->diskBlockSize = blockSize;
+            openFiles[currentDirFd-1]->inode = newDirInode;
+            openFiles[currentDirFd-1]->currentByte = 0;
 
             myfsLink(currentDirFd, current.filename, current.inumber);
             myfsLink(currentDirFd, parent.filename, parent.inumber);
@@ -707,8 +707,8 @@ int myfsOpendir(Disk *d, const char *path)
 
 int myfsReaddir(int fd, char *filename, unsigned int *inumber)
 {
-    if(fd < 0 || fd >= MAX_FDS) return -1;
-    FileInfo* file = openFiles[fd];
+    if(fd <= 0 || fd > MAX_FDS) return -1;
+    FileInfo* file = openFiles[fd-1];
 
     if(file == NULL || inodeGetFileType(file->inode) != FILETYPE_DIR) return -1;
 
@@ -728,8 +728,8 @@ int myfsReaddir(int fd, char *filename, unsigned int *inumber)
 
 int myfsLink(int fd, const char *filename, unsigned int inumber) // TODO conferir se ja existe entrada de nome filename
 {
-    if(fd < 0 || fd >= MAX_FDS) return -1;
-    FileInfo* dir = openFiles[fd];
+    if(fd <= 0 || fd > MAX_FDS) return -1;
+    FileInfo* dir = openFiles[fd-1];
 
     if(dir == NULL || inodeGetFileType(dir->inode) != FILETYPE_DIR) return -1;
 
@@ -770,8 +770,8 @@ int myfsLink(int fd, const char *filename, unsigned int inumber) // TODO conferi
 
 int myfsUnlink(int fd, const char *filename)
 {
-    if(fd < 0 || fd >= MAX_FDS) return -1;
-    FileInfo* dir = openFiles[fd];
+    if(fd <= 0 || fd > MAX_FDS) return -1;
+    FileInfo* dir = openFiles[fd-1];
 
     if(dir == NULL || inodeGetFileType(dir->inode) != FILETYPE_DIR) return -1;
 
