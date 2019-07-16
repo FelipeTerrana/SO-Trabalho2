@@ -96,14 +96,14 @@ unsigned char __setBitToZero(unsigned char byte, unsigned int bit)
 
 
 
-// Encontra um bloco livre no disco e o marca como ocupado se este estiver em formato myfs. Retorna -1 se nao houver
+// Encontra um bloco livre no disco e o marca como ocupado se este estiver em formato myfs. Retorna 0 se nao houver
 // bloco livre ou se o disco nao estiver formatado corretamente
 unsigned int __findFreeBlock(Disk *d)
 {
     unsigned char buffer[DISK_SECTORDATASIZE];
-    if(diskReadSector(d, 0, buffer) == -1) return -1; // Superbloco inicialmente carregado no buffer
+    if(diskReadSector(d, 0, buffer) == -1) return 0; // Superbloco inicialmente carregado no buffer
 
-    if(buffer[SUPERBLOCK_FSID] != myfsInfo.fsid) return -1;
+    if(buffer[SUPERBLOCK_FSID] != myfsInfo.fsid) return 0;
 
     unsigned int sectorsPerBlock;
     char2ul(&buffer[SUPERBLOCK_BLOCKSIZE], &sectorsPerBlock);
@@ -123,7 +123,7 @@ unsigned int __findFreeBlock(Disk *d)
     unsigned int i;
     for(i = freeSpaceSector; i < freeSpaceSector + freeSpaceSize; i++)
     {
-        if(diskReadSector(d, i, buffer) == -1) return -1;
+        if(diskReadSector(d, i, buffer) == -1) return 0;
 
         unsigned int j;
         for(j=0; j < DISK_SECTORDATASIZE; j++)
@@ -137,10 +137,10 @@ unsigned int __findFreeBlock(Disk *d)
                              freeBit * sectorsPerBlock;
 
                 // Bloco livre excede a regiao de blocos disponiveis, nenhum bloco livre valido foi encontrado
-                if((freeBlock - firstBlock) / sectorsPerBlock >= numBlocks) return -1;
+                if((freeBlock - firstBlock) / sectorsPerBlock >= numBlocks) return 0;
 
                 buffer[j] = __setBitToOne(buffer[j], freeBit);
-                if(diskWriteSector(d, i, buffer) == -1) return -1;
+                if(diskWriteSector(d, i, buffer) == -1) return 0;
 
                 return freeBlock;
             }
@@ -260,9 +260,9 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     inodeSetRefCount(root, 3);
     inodeSetFileType(root, FILETYPE_DIR);
 
-    int rootBlock = __findFreeBlock(d);
+    unsigned int rootBlock = __findFreeBlock(d);
 
-    if(rootBlock == -1 || inodeAddBlock(root, rootBlock) == -1)
+    if(rootBlock == 0 || inodeAddBlock(root, rootBlock) == -1)
     {
         free(root);
         return -1;
@@ -300,6 +300,8 @@ unsigned int __getBlockSize(Disk *d)
     unsigned char superblock[DISK_SECTORDATASIZE];
     if(diskReadSector(d, 0, superblock) == -1) return 0;
 
+    if(superblock[SUPERBLOCK_FSID] != myfsInfo.fsid) return 0;
+
     unsigned int blockSize;
     char2ul(&superblock[SUPERBLOCK_BLOCKSIZE], &blockSize);
 
@@ -321,7 +323,7 @@ int __openRoot(Disk *d)
 
     if(fd == MAX_FDS) return -1;
 
-    FileInfo* root = openFiles[fd] = malloc(sizeof(DirectoryEntry));
+    FileInfo* root = openFiles[fd] = malloc(sizeof(FileInfo));
     root->disk = d;
     root->diskBlockSize = __getBlockSize(d);
     root->inode = inodeLoad(ROOT_DIRECTORY_INODE, d);
@@ -423,7 +425,7 @@ int myfsWrite(int fd, const char *buf, unsigned int nbytes)
         {
             currentBlock = __findFreeBlock(file->disk);
 
-            if(currentBlock == -1) break; // Disco cheio
+            if(currentBlock == 0) break; // Disco cheio
 
             if(inodeAddBlock(file->inode, currentBlock) == -1) // Erro na associacao do bloco livre ao inode
             {
@@ -486,8 +488,109 @@ int myfsClose(int fd)
 
 int myfsOpendir(Disk *d, const char *path)
 {
-    // TODO myfsOpendir
-    return 0;
+    int currentDirFd = __openRoot(d);
+    if(currentDirFd == -1) return -1;
+
+    unsigned int blockSize = openFiles[currentDirFd]->diskBlockSize;
+
+    if(path[0] == '/') path++; // Desconsidera a primeira barra, ja que todos os caminhos se iniciam na raiz
+
+    while(path[0] != '\0')
+    {
+        char nextDirname[MAX_FILENAME_LENGTH + 1];
+        int i;
+        for(i=0; path[i] != '/' && path[i] != '\0'; i++) nextDirname[i] = path[i];
+        nextDirname[i] = '\0';
+        path += i;
+
+        if(path[0] == '/') path++;
+
+        DirectoryEntry entry;
+        bool foundEntry = false;
+        while(myfsReaddir(currentDirFd, entry.filename, &entry.inumber) == 1)
+        {
+            if(strcmp(entry.filename, nextDirname) == 0)
+            {
+                Inode* nextDirInode = inodeLoad(entry.inumber, d);
+                if(nextDirInode == NULL || inodeGetFileType(nextDirInode) != FILETYPE_DIR)
+                {
+                    free(nextDirInode);
+                    return -1;
+                }
+
+                foundEntry = true;
+                myfsClosedir(currentDirFd);
+
+                openFiles[currentDirFd] = malloc(sizeof(FileInfo));
+                openFiles[currentDirFd]->disk = d;
+                openFiles[currentDirFd]->diskBlockSize = blockSize;
+                openFiles[currentDirFd]->inode = nextDirInode;
+                openFiles[currentDirFd]->currentByte = 0;
+
+                break;
+            }
+        }
+
+        // Nao foi encontrado o proximo diretorio a ser aberto mas ele e o ultimo a ser visitado,
+        // cria um novo diretorio vazio dentro do atual
+        if(!foundEntry && path[0] == '\0')
+        {
+            unsigned int newDirInumber = inodeFindFreeInode(ROOT_DIRECTORY_INODE + 1, d);
+            if(newDirInumber == 0)
+            {
+                myfsClosedir(currentDirFd);
+                return -1;
+            }
+
+            Inode* newDirInode = inodeLoad(newDirInumber, d);
+            if(newDirInode == NULL)
+            {
+                myfsClosedir(currentDirFd);
+                return -1;
+            }
+
+            inodeSetFileType(newDirInode, FILETYPE_DIR);
+            inodeSetRefCount(newDirInode, 0);
+            inodeSetFileSize(newDirInode, 0);
+
+            unsigned int newDirFirstBlock = __findFreeBlock(d);
+            if(newDirFirstBlock == 0)
+            {
+                free(newDirInode);
+                myfsClosedir(currentDirFd);
+                return -1;
+            }
+
+            DirectoryEntry current;
+            current.inumber = newDirInumber;
+            strcpy(current.filename, ".");
+
+            DirectoryEntry parent;
+            parent.inumber = inodeGetNumber(openFiles[currentDirFd]->inode);
+            strcpy(parent.filename, "..");
+
+            myfsClosedir(currentDirFd);
+            openFiles[currentDirFd] = malloc(sizeof(FileInfo));
+            openFiles[currentDirFd]->disk = d;
+            openFiles[currentDirFd]->diskBlockSize = blockSize;
+            openFiles[currentDirFd]->inode = newDirInode;
+            openFiles[currentDirFd]->currentByte = 0;
+
+            myfsLink(currentDirFd, current.filename, current.inumber);
+            myfsLink(currentDirFd, parent.filename, parent.inumber);
+
+            inodeSave(newDirInode);
+            return currentDirFd;
+        }
+
+        else if(!foundEntry) // Nao foi encontrado o proximo diretorio e ainda ha outros a serem percorridos, erro
+        {
+            myfsClosedir(currentDirFd);
+            return -1;
+        }
+    }
+
+    return currentDirFd;
 }
 
 
