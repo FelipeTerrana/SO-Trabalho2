@@ -293,6 +293,53 @@ int myfsFormat(Disk *d, unsigned int blockSize)
 
 
 
+// Le e retorna o tamanho do bloco de um disco em bytes, assumindo que ele esteja formatado em myfs.
+// Retorna 0 em caso de erro
+unsigned int __getBlockSize(Disk *d)
+{
+    unsigned char superblock[DISK_SECTORDATASIZE];
+    if(diskReadSector(d, 0, superblock) == -1) return 0;
+
+    unsigned int blockSize;
+    char2ul(&superblock[SUPERBLOCK_BLOCKSIZE], &blockSize);
+
+    return blockSize;
+}
+
+
+
+
+// Funciona como um openDir para o diretorio raiz de um disco. Pode ser fechado normalmnte atraves de myfsCloseDir.
+// Retorna um descritor de arquivo em caso de sucesso e -1 em caso de erro
+int __openRoot(Disk *d)
+{
+    int fd;
+    for(fd = 0; fd < MAX_FDS; fd++)
+    {
+        if(openFiles[fd] == NULL) break;
+    }
+
+    if(fd == MAX_FDS) return -1;
+
+    FileInfo* root = openFiles[fd] = malloc(sizeof(DirectoryEntry));
+    root->disk = d;
+    root->diskBlockSize = __getBlockSize(d);
+    root->inode = inodeLoad(ROOT_DIRECTORY_INODE, d);
+    root->currentByte = 0;
+
+    if(root->diskBlockSize == 0 || root->inode == NULL)
+    {
+        free(root);
+        openFiles[fd] = NULL;
+        return -1;
+    }
+
+    return fd;
+}
+
+
+
+
 int myfsOpen(Disk *d, const char *path)
 {
     // TODO myfsOpen
