@@ -256,8 +256,8 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     Inode* root = inodeLoad(ROOT_DIRECTORY_INODE, d);
     if(root == NULL) return -1;
 
-    inodeSetFileSize(root, 2 * sizeof(DirectoryEntry));
-    inodeSetRefCount(root, 3);
+    inodeSetFileSize(root, 0);
+    inodeSetRefCount(root, 1);
     inodeSetFileType(root, FILETYPE_DIR);
 
     unsigned int rootBlock = __findFreeBlock(d);
@@ -275,15 +275,20 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     strcpy(current.filename, ".");
     strcpy(parent.filename, "..");
 
-    unsigned char rootBuffer[DISK_SECTORDATASIZE]; // Transfere os dados das entradas . e .. direto para o setor da raiz
-    for(i=0; i < sizeof(DirectoryEntry); i++) rootBuffer[i] = ((char*) &current) [i];
-    for(i=0; i < sizeof(DirectoryEntry); i++) rootBuffer[i + sizeof(DirectoryEntry)] = ((char*) &parent) [i];
+    // Preserva um descritor de arquivo para poder usar sua posicao temporariamente
+    // Nao chama a funcao __openRoot para que nao exista a possibilidade de falha
+    FileInfo* previousFirstFD = openFiles[1-1];
+    openFiles[1-1] = malloc(sizeof(FileInfo));
+    openFiles[1-1]->disk = d;
+    openFiles[1-1]->diskBlockSize = blockSize;
+    openFiles[1-1]->inode = root;
+    openFiles[1-1]->currentByte = 0;
 
-    if(diskWriteSector(d, rootBlock, rootBuffer) == -1 )
-    {
-        free(root);
-        return -1;
-    }
+    myfsLink(1, current.filename, current.inumber);
+    myfsLink(1, parent.filename, parent.inumber);
+
+    free(openFiles[1-1]);
+    openFiles[1-1] = previousFirstFD;
 
     inodeSave(root);
     free(root);
