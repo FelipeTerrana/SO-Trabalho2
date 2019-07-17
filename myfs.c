@@ -643,6 +643,13 @@ int myfsUnlink(int fd, const char *filename)
                 }
             }
 
+            if( (inodeGetFileType(inodeToUnlink) == FILETYPE_DIR && previousRefCount == 2) &&
+                 inodeGetFileSize(inodeToUnlink) != 2 * sizeof(DirectoryEntry) )
+            {
+                free(inodeToUnlink); // Significa que o diretorio a ser deletado possui outras entradas alem de . e ..
+                return -1;
+            }
+
             inodeSetRefCount(inodeToUnlink, previousRefCount - 1);
 
             // Para remover a entrada encontrada, percorre-se o diretorio lendo as entradas da frente e escrevendo sobre
