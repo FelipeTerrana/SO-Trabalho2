@@ -105,9 +105,8 @@ int myfsFormat(Disk *d, unsigned int blockSize)
 
     numBlocks--; // Desconsidera bloco ocupado pela raiz
 
-    DirectoryEntry current, parent;
-    current.inumber = parent.inumber = ROOT_DIRECTORY_INODE;
-    strcpy(current.filename, ".");
+    DirectoryEntry parent;
+    parent.inumber = ROOT_DIRECTORY_INODE;
     strcpy(parent.filename, "..");
 
     // Preserva um descritor de arquivo para poder usar sua posicao temporariamente
@@ -119,7 +118,7 @@ int myfsFormat(Disk *d, unsigned int blockSize)
     openFiles[1-1]->inode = root;
     openFiles[1-1]->currentByte = 0;
 
-    if(myfsLink(1, current.filename, current.inumber) == -1 || myfsLink(1, parent.filename, parent.inumber) == -1)
+    if(!__autoLink(1) || myfsLink(1, parent.filename, parent.inumber) == -1)
     {
         free(openFiles[1-1]);
         openFiles[1-1] = previousFirstFD;
@@ -487,10 +486,6 @@ int myfsOpendir(Disk *d, const char *path)
                 return -1;
             }
 
-            DirectoryEntry current;
-            current.inumber = newDirInumber;
-            strcpy(current.filename, ".");
-
             DirectoryEntry parent;
             parent.inumber = inodeGetNumber(openFiles[currentDirFd-1]->inode);
             strcpy(parent.filename, "..");
@@ -502,8 +497,7 @@ int myfsOpendir(Disk *d, const char *path)
             openFiles[currentDirFd-1]->inode = newDirInode;
             openFiles[currentDirFd-1]->currentByte = 0;
 
-            if( myfsLink(currentDirFd, current.filename, current.inumber) == -1 ||
-                myfsLink(currentDirFd, parent.filename, parent.inumber) == -1 )
+            if( !__autoLink(currentDirFd) || myfsLink(currentDirFd, parent.filename, parent.inumber) == -1 )
             {
                 __deleteFile(d, newDirInode); // Nao usa __deleteDir pois o novo diretorio nao e um diretorio valido
                 myfsClosedir(currentDirFd);

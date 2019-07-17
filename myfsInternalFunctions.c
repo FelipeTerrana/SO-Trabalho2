@@ -15,6 +15,7 @@
 #include "myfsInternalFunctions.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include "util.h"
 
 // 255 significa que os 8 bits sao iguais a 1. Se for diferente de 255 pelo menos um bit e 0, representando
@@ -259,4 +260,41 @@ bool __deleteDir(Disk *d, Inode *inode, Inode *parent)
     inodeSave(parent);
 
     return __deleteFile(d, inode);
+}
+
+
+
+
+bool __autoLink(int fd)
+{
+    if(fd <= 0 || fd > MAX_FDS) return false;
+    FileInfo* dir = openFiles[fd-1];
+
+    if(dir == NULL || inodeGetFileType(dir->inode) != FILETYPE_DIR) return false;
+
+    unsigned int dirInumber = inodeGetNumber(dir->inode); // Atualiza inode do diretorio na memoria
+    free(dir->inode);
+    dir->inode = inodeLoad(dirInumber, dir->disk);
+
+    DirectoryEntry entry;
+    strcpy(entry.filename, ".");
+    entry.inumber = inodeGetNumber(dir->inode);
+
+    inodeSetRefCount(dir->inode, 1);
+
+    dir->currentByte = 0;
+    int bytesWritten = myfsWrite(fd, (const char*) &entry, sizeof(DirectoryEntry));
+    dir->currentByte = 0;
+
+    if(bytesWritten != sizeof(DirectoryEntry)) // Falha na insercao da entrada
+    {
+        // Diretorio volta ao tamanho original, caso a escrita tenha sido valida mas incompleta
+        inodeSetFileSize(dir->inode, 0);
+        inodeSave(dir->inode);
+
+        return false;
+    }
+
+    inodeSave(dir->inode);
+    return true;
 }

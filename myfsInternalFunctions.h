@@ -85,4 +85,10 @@ bool __deleteFile(Disk *d, Inode *inode);
 bool __deleteDir(Disk *d, Inode *inode, Inode *parent);
 
 
+// Faz o link do diretorio para ele mesmo ("."). Retorna true (!= 0) se o link foi bem sucedido e false (0) em caso
+// de erro. Esta funcao so deve ser usada se o diretorio estiver vazio e apenas uma vez, nenhuma verificacao e feita
+// nesse sentido
+bool __autoLink(int fd);
+
+
 #endif //SO_TRABALHO2_MYFSINTERNALFUNCTIONS_H
