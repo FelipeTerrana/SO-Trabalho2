@@ -654,8 +654,8 @@ int myfsUnlink(int fd, const char *filename)
 
             // Para remover a entrada encontrada, percorre-se o diretorio lendo as entradas da frente e escrevendo sobre
             // as anteriores, "arrastando" as entradas para tras
-            unsigned int currentEntryByte = dir->currentByte;
-            unsigned int nextEntryByte = dir->currentByte + sizeof(DirectoryEntry);
+            unsigned int currentEntryByte = dir->currentByte - sizeof(DirectoryEntry);
+            unsigned int nextEntryByte = dir->currentByte;
 
             dir->currentByte = nextEntryByte;
             while(myfsRead(fd, (char*) &entry, sizeof(DirectoryEntry)) == sizeof(DirectoryEntry))
