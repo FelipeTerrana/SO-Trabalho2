@@ -542,7 +542,7 @@ int myfsReaddir(int fd, char *filename, unsigned int *inumber)
 
 
 
-int myfsLink(int fd, const char *filename, unsigned int inumber) // TODO conferir se ja existe entrada de nome filename
+int myfsLink(int fd, const char *filename, unsigned int inumber)
 {
     if(fd <= 0 || fd > MAX_FDS) return -1;
     FileInfo* dir = openFiles[fd-1];
@@ -556,13 +556,22 @@ int myfsLink(int fd, const char *filename, unsigned int inumber) // TODO conferi
     Inode* inodeToLink = inodeLoad(inumber, dir->disk);
     if(inodeToLink == NULL) return -1;
 
-    DirectoryEntry entry;
-    strcpy(entry.filename, filename);
-    entry.inumber = inumber;
-
     unsigned int previousCurrentByte = dir->currentByte;
     unsigned int previousDirSize = inodeGetFileSize(dir->inode);
-    dir->currentByte = previousDirSize; // Para que a entrada seja inserida sempre no final do diretorio
+    dir->currentByte = 0; // Para percorrer as entradas desde o inicio
+
+    DirectoryEntry entry;
+    while(myfsReaddir(fd, entry.filename, &entry.inumber) == 1)
+    {
+        if(strcmp(entry.filename, filename) == 0) // Entrada ja existe
+        {
+            free(inodeToLink);
+            return -1;
+        }
+    }
+
+    strcpy(entry.filename, filename);
+    entry.inumber = inumber;
 
     int bytesWritten = myfsWrite(fd, (const char*) &entry, sizeof(DirectoryEntry));
     dir->currentByte = previousCurrentByte;
